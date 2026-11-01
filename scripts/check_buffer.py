@@ -27,13 +27,15 @@ def query(q, variables=None):
 organizations=(query("query { account { organizations { id } } }").get("account") or {}).get("organizations") or []
 channels={"instagram":[],"tiktok":[],"youtube":[]}
 for org in organizations:
-    fetched=query("query ($id: OrganizationId!) { channels(input: {organizationId:$id}) { id service isQueuePaused } }",{"id":org["id"]})
+    fetched=query("query ($id: OrganizationId!) { channels(input: {organizationId:$id}) { id service isDisconnected isLocked isQueuePaused } }",{"id":org["id"]})
     for ch in fetched.get("channels") or []:
         k=str(ch.get("service", "")).lower()
         if k in channels:channels[k].append(ch)
 for name, matches in channels.items():
     if len(matches)!=1:
         raise SystemExit("FAILED: "+name+" requires exactly one connected channel (found "+str(len(matches))+").")
-    print("PASS:",name,"channel is accessible to the API. Paused queue:",bool(matches[0].get("isQueuePaused")))
+    if matches[0].get("isDisconnected") or matches[0].get("isLocked"):
+        raise SystemExit("FAILED: "+name+" is disconnected or locked in Buffer")
+    print("PASS:",name,"connected, unlocked; queue paused:",bool(matches[0].get("isQueuePaused")))
 print("PASS: Buffer key and three channels can be read. No posts were sent.")
 print("NOTE: Successful read-only test does not verify posting permissions or automatic publishing rights.")
