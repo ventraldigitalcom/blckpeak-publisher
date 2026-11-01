@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""BLCKPEAK approved-only organic publisher. No uploads on NONE or without GitHub opt-in."""
+import json, os, re, subprocess, sys, time, urllib.parse, urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+DOCS = ROOT / "docs"
+RECEIPTS = ROOT / "receipts"
+BUFFER_ENDPOINT = "https://api.buffer.com"
+
+def execute(*args):
+    subprocess.run(args, cwd=ROOT, check=True, timeout=300)
+
+def approval():
+    filename = os.getenv("APPROVAL_FILE", "")
+    if not re.fullmatch(r"approvals/[A-Za-z0-9_-]{8,72}\.json", filename):
+        raise ValueError("Missing canonical explicit approval filename")
+    path = ROOT / filename
+    if not path.is_file() or path.is_symlink():
+        raise ValueError("Approval manifest missing")
+    obj = json.loads(path.read_text(encoding="utf-8"))
+    needed = ("approval_id","chosen","user_approved","image_url",
+              "caption_instagram","caption_tiktok","caption_youtube","youtube_title")
+    if not all(k in obj for k in needed):
+        raise ValueError("Incomplete approval manifest")
+    if obj["approval_id"] != path.stem or obj["user_approved"] is not True or obj["chosen"] not in ("A","B","C"):
+        raise ValueError("User has NOT explicitly approved A/B/C; NONE must not post")
+    if not all(isinstance(obj[k],str) and obj[k].strip() for k in needed if k not in ("user_approved",)):
+        raise ValueError("Missing approval metadata")
+    url = urllib.parse.urlparse(obj["image_url"])
+    if url.scheme != "https" or url.username or url.password or (url.hostname or "").lower() not in ("cdn.shopify.com","blckpeak.com","www.blckpeak.com"):
+        raise ValueError("Refuse untrusted image host")
+    return obj
+
+def paths(obj):
+    folder = DOCS / "assets"
+    folder.mkdir(parents=True, exist_ok=True)
+    ident = obj["approval_id"]
+    return folder / (ident + ".mp4"), folder / (ident + "_instagram.jpg")
+
+def prepare(obj):
+    mp4, jpg = paths(obj)
+    if mp4.is_file() and jpg.is_file():
+        print("Existing media retained"); return
+    request=urllib.request.Request(obj["image_url"],headers={"User-Agent":"BLCKPEAK-publisher"})
+    with urllib.request.urlopen(request, timeout=40) as response:
+        if not response.headers.get("content-type","").lower().startswith("image/"):
+            raise ValueError("Approval URL does not return an image")
+        content=response.read(15000001)
+    if len(content)>15000000 or not content:
+        raise ValueError("Approved photo too large/empty")
+    target=Path("/tmp/blckpeak_approved_photo")
+    target.write_bytes(content)
+    if not mp4.is_file():
+        execute("ffmpeg","-hide_banner","-loglevel","error","-y",
+                "-loop","1","-framerate","30","-i",str(target),"-t","8",
+                "-vf","scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
+                "-r","30","-c:v","libx264","-preset","veryfast","-crf","22","-movflags","+faststart",str(mp4))
+    if not jpg.is_file():
+        filt="[0:v]split=2[bg][fg];[bg]scale=1080:1350:force_original_aspect_ratio=increase,crop=1080:1350,boxblur=20:1[blur];[fg]scale=1080:1350:force_original_aspect_ratio=decrease[sharp];[blur][sharp]overlay=(W-w)/2:(H-h)/2,format=yuvj420p"
+        execute("ffmpeg","-hide_banner","-loglevel","error","-y","-i",str(target),"-filter_complex",filt,"-frames:v","1","-q:v","2",str(jpg))
+    print("Converted approved media", mp4.stat().st_size, jpg.stat().st_size)
+
+def urls(obj):
+    base=os.getenv("PAGES_BASE_URL","").rstrip("/")
+    if not base.startswith("https://"):
+        raise ValueError("Missing GitHub Pages HTTPS deployment URL")
+    prefix=base+"/assets/"+obj["approval_id"]
+    return prefix+".mp4",prefix+"_instagram.jpg"
+
+def verify(obj):
+    for url in urls(obj):
+        for trial in range(16):
+            try:
+                with urllib.request.urlopen(urllib.request.Request(url,method="HEAD"), timeout=12) as resp:
+                    if resp.status==200: break
+            except Exception: pass
+            time.sleep(6)
+        else:
+            raise RuntimeError("Public approved media unavailable: "+url)
+    print("Public approved media URLs verified")
+
+def gql(key, query, variables=None):
+    body=json.dumps({"query":query,"variables":variables or {}}).encode()
+    req=urllib.request.Request(BUFFER_ENDPOINT,data=body,method="POST",
+      headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"})
+    with urllib.request.urlopen(req,timeout=45) as response:
+        data=json.load(response)
+    if data.get("errors"):
+        raise RuntimeError("Buffer API returned GraphQL errors: "+str(data["errors"])[:650])
+    return data.get("data") or {}
+
+def channels(key):
+    organizations=(gql(key,"query { account { organizations { id name } } }").get("account") or {}).get("organizations") or []
+    found={"instagram":[],"tiktok":[],"youtube":[]}
+    for org in organizations:
+        data=gql(key,"query ($id: OrganizationId!) { channels(input: { organizationId: $id }) { id name service } }",{"id":org["id"]})
+        for ch in data.get("channels") or []:
+            service=str(ch.get("service","")).lower()
+            if service in found:
+                found[service].append(ch["id"])
+    if any(len(v)!=1 for v in found.values()):
+        raise ValueError("Expected 1 Instagram, 1 TikTok and 1 YouTube channel; found: "+str({k:len(v) for k,v in found.items()}))
+    return {k:v[0] for k,v in found.items()}
+
+def write_receipt(obj, state):
+    RECEIPTS.mkdir(exist_ok=True)
+    name=RECEIPTS/(obj["approval_id"]+".json")
+    name.write_text(json.dumps(state,indent=2)+"\n")
+    execute("git","config","user.email","41898282+github-actions[bot]@users.noreply.github.com")
+    execute("git","config","user.name","github-actions[bot]")
+    execute("git","add",str(name.relative_to(ROOT)))
+    if subprocess.run(["git","diff","--cached","--quiet"],cwd=ROOT).returncode:
+        execute("git","commit","-m","Record BLCKPEAK post attempt")
+        execute("git","push")
+
+def publish(obj):
+    if os.getenv("PUBLISHING_ENABLED")!="true":
+        raise ValueError("Owner has not enabled organic publishing")
+    key=os.getenv("BUFFER_API_KEY")
+    if not key: raise ValueError("Missing encrypted Buffer API secret")
+    ids=channels(key)
+    mp4,instagram=urls(obj)
+    verify(obj)
+    file=RECEIPTS/(obj["approval_id"]+".json")
+    state=json.loads(file.read_text()) if file.exists() else {"approval_id":obj["approval_id"],"attempts":{}}
+    mutation="mutation($input: CreatePostInput!) { createPost(input: $input) { ... on PostActionSuccess { post { id status } } ... on InvalidInputError { message } } }"
+    for service in ("instagram","tiktok","youtube"):
+        if service in state["attempts"]:
+            print("Skipping previously attempted",service); continue
+        # Persist before external request: no unsafe retries after unknown API results.
+        state["attempts"][service]={"status":"attempting"}
+        write_receipt(obj,state)
+        if service=="instagram":
+            assets=[{"image":{"url":instagram,"metadata":{"altText":"BLCKPEAK handheld showerhead"}}}]
+            meta={"instagram":{"type":"post","shouldShareToFeed":True,"isAiGenerated":True}}
+        elif service=="tiktok":
+            assets=[{"image":{"url":obj["image_url"],"metadata":{"altText":"BLCKPEAK handheld showerhead"}}}]
+            meta={"tiktok":{"title":obj["youtube_title"][:80]}}
+        else:
+            assets=[{"video":{"url":mp4,"metadata":{"title":obj["youtube_title"]}}}]
+            meta={"youtube":{"categoryId":"26","title":obj["youtube_title"],"madeForKids":False,"isAiGenerated":True}}
+        inp={"channelId":ids[service],"text":obj["caption_"+service],
+             "assets":assets,"metadata":meta,"mode":"shareNow",
+             "schedulingType":"automatic","needsApproval":False,
+             "saveToDraft":False,"aiAssisted":True}
+        try:
+            response=gql(key,mutation,{"input":inp}).get("createPost") or {}
+            post=response.get("post") or {}
+            if not post.get("id"): raise RuntimeError("Buffer did not accept post: "+str(response)[:400])
+            state["attempts"][service]={"status":"buffer_accepted","id":post["id"],"buffer_status":post.get("status")}
+        except Exception as err:
+            state["attempts"][service]={"status":"uncertain","error":str(err)[:500]}
+        write_receipt(obj,state)
+    print(json.dumps(state,indent=2))
+    if any((state["attempts"].get(s) or {}).get("status")!="buffer_accepted" for s in ("instagram","tiktok","youtube")):
+        raise RuntimeError("Some channels require review in Buffer Sent; DO NOT retry automatically")
+
+if __name__=="__main__":
+    item=approval()
+    if len(sys.argv)!=2: raise SystemExit("Use prepare, verify or publish")
+    op=sys.argv[1]
+    if op=="prepare":prepare(item)
+    elif op=="verify":verify(item)
+    elif op=="publish":publish(item)
+    else:raise SystemExit("Invalid operation")
