@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/check-buffer.yml'
+      - 'scripts/check_buffer.py'
   workflow_dispatch:
 permissions:
   contents: read
