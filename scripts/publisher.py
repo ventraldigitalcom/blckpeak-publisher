@@ -2,6 +2,8 @@
 """BLCKPEAK approved-only organic publisher. No uploads on NONE or without GitHub opt-in."""
 import json, os, re, subprocess, sys, time, urllib.parse, urllib.request
 from pathlib import Path
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
@@ -114,6 +116,25 @@ def write_receipt(obj, state):
         execute("git","commit","-m","Record BLCKPEAK post attempt")
         execute("git","push")
 
+def enforce_daily_post_cap(obj, state):
+    """One A/B/C creative posted to three channels counts as ONE daily slot."""
+    today=datetime.now(ZoneInfo("America/Chicago")).date().isoformat()
+    if state.get("local_post_day"):
+        return state
+    previous=0
+    if RECEIPTS.exists():
+        for other in RECEIPTS.glob("*.json"):
+            if other.stem==obj["approval_id"]: continue
+            try:
+                row=json.loads(other.read_text())
+                if row.get("local_post_day")==today and row.get("attempts"):
+                    previous+=1
+            except (ValueError, OSError): continue
+    if previous>=2:
+        raise RuntimeError("Two-post daily cap reached for "+today+" (America/Chicago). Approval remains pending; do not post until next day.")
+    state["local_post_day"]=today
+    return state
+
 def publish(obj):
     if os.getenv("PUBLISHING_ENABLED")!="true":
         raise ValueError("Owner has not enabled organic publishing")
@@ -124,6 +145,7 @@ def publish(obj):
     verify(obj)
     file=RECEIPTS/(obj["approval_id"]+".json")
     state=json.loads(file.read_text()) if file.exists() else {"approval_id":obj["approval_id"],"attempts":{}}
+    state=enforce_daily_post_cap(obj,state)
     mutation="mutation($input: CreatePostInput!) { createPost(input: $input) { ... on PostActionSuccess { post { id status } } ... on InvalidInputError { message } } }"
     for service in ("instagram","tiktok","youtube"):
         if service in state["attempts"]:
