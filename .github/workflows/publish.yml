@@ -1,0 +1,105 @@
+name: BLCKPEAK approved publisher
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'approvals/*.json'
+  workflow_dispatch:
+    inputs:
+      approval_id:
+        description: 'Existing user-approved manifest ID'
+        required: true
+        type: string
+      dry_run:
+        description: 'Do not publish anything to social media'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: blckpeak-publisher
+  cancel-in-progress: false
+
+jobs:
+  approved-only:
+    name: Prepare and optionally publish approved image
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Checkout with history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: true
+
+      - name: Select exactly one approval manifest
+        id: approval
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_ID: ${{ inputs.approval_id }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ]; then
+            mapfile -t files < <(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" -- 'approvals/*.json')
+            test "${#files[@]}" -eq 1 || { echo "Expected exactly one new approved creative"; exit 1; }
+            selected="${files[0]}"
+          else
+            [[ "$MANUAL_ID" =~ ^[A-Za-z0-9_-]{8,72}$ ]] || exit 1
+            selected="approvals/${MANUAL_ID}.json"
+          fi
+          test -f "$selected" || exit 1
+          echo "approval_file=$selected" >> "$GITHUB_OUTPUT"
+
+      - name: Generate YouTube Short and Instagram image
+        env:
+          APPROVAL_FILE: ${{ steps.approval.outputs.approval_file }}
+        run: python3 scripts/publisher.py prepare
+
+      - name: Save media permanently before uploading
+        run: |
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.name 'github-actions[bot]'
+          git add docs/assets/
+          if ! git diff --cached --quiet; then
+            git commit -m 'Store approved BLCKPEAK image and short'
+            git push
+          fi
+
+      - name: Upload static site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - name: Deploy verified media
+        id: deploy
+        uses: actions/deploy-pages@v4
+
+      - name: Confirm public media URLs
+        env:
+          APPROVAL_FILE: ${{ steps.approval.outputs.approval_file }}
+          PAGES_BASE_URL: ${{ steps.deploy.outputs.page_url }}
+        run: python3 scripts/publisher.py verify
+
+      - name: Publish only if explicitly enabled and approved
+        if: ${{ vars.PUBLISHING_ENABLED == 'true' && (github.event_name == 'push' || inputs.dry_run == false) }}
+        env:
+          APPROVAL_FILE: ${{ steps.approval.outputs.approval_file }}
+          PAGES_BASE_URL: ${{ steps.deploy.outputs.page_url }}
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+          PUBLISHING_ENABLED: ${{ vars.PUBLISHING_ENABLED }}
+        run: python3 scripts/publisher.py publish
+
+      - name: Upload private receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: posting-receipts
+          path: receipts/
+          if-no-files-found: ignore
