@@ -1,5 +1,9 @@
 name: Verify Buffer connection (read-only)
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/check-buffer.yml'
   workflow_dispatch:
 permissions:
   contents: read
