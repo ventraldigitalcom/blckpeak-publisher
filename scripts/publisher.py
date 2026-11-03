@@ -182,7 +182,7 @@ def publish(obj):
         state["attempts"][service]={"status":"attempting"}
         write_receipt(obj,state)
         if service=="instagram":
-            assets=[{"image":{"url":instagram,"metadata":{"altText":"BLCKPEAK handheld showerhead"}}}]
+            assets=[{"image":{"url":obj["image_url"],"metadata":{"altText":"BLCKPEAK handheld showerhead"}}}]
             meta={"instagram":{"type":"post","shouldShareToFeed":True,"isAiGenerated":True}}
         elif service=="tiktok":
             assets=[{"image":{"url":obj["image_url"],"metadata":{"altText":"BLCKPEAK handheld showerhead"}}}]
