@@ -62,6 +62,11 @@ def approval():
     url = urllib.parse.urlparse(obj["image_url"])
     if url.scheme != "https" or url.username or url.password or (url.hostname or "").lower() not in ("cdn.shopify.com","blckpeak.com","www.blckpeak.com"):
         raise ValueError("Refuse untrusted image host")
+    platforms=obj.get("platforms",["instagram","tiktok","youtube"])
+    if (not isinstance(platforms,list) or len(platforms)==0
+            or len(set(map(str,platforms))) != len(platforms)
+            or any(p not in ("instagram","tiktok","youtube") for p in platforms)):
+        raise ValueError("Invalid platform target list; must be unique Instagram/TikTok/YouTube")
     scheduled_at(obj)
     return obj
 
@@ -182,7 +187,8 @@ def publish(obj):
     state=json.loads(file.read_text()) if file.exists() else {"approval_id":obj["approval_id"],"attempts":{}}
     state=enforce_daily_post_cap(obj,state)
     mutation="mutation($input: CreatePostInput!) { createPost(input: $input) { ... on PostActionSuccess { post { id status dueAt } } ... on MutationError { message } } }"
-    for service in ("instagram","tiktok","youtube"):
+    targets=obj.get("platforms",["instagram","tiktok","youtube"])
+    for service in targets:
         if service in state["attempts"]:
             print("Skipping previously attempted",service); continue
         # Persist before external request: no unsafe retries after unknown API results.
@@ -217,7 +223,7 @@ def publish(obj):
             state["attempts"][service]={"status":"uncertain","error":str(err)[:500]}
         write_receipt(obj,state)
     print(json.dumps(state,indent=2))
-    if any((state["attempts"].get(s) or {}).get("status")!="buffer_scheduled" for s in ("instagram","tiktok","youtube")):
+    if any((state["attempts"].get(s) or {}).get("status")!="buffer_scheduled" for s in targets):
         raise RuntimeError("Some channels require review in Buffer Calendar; DO NOT retry automatically")
 
 if __name__=="__main__":
