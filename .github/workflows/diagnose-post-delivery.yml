@@ -1,0 +1,44 @@
+name: BLCKPEAK read-only platform delivery diagnosis
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/diagnose-post-delivery.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect-existing-posts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Query post statuses only (NO createPost or mutation)
+        env:
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error
+          key=os.getenv('BUFFER_API_KEY')
+          if not key:
+              raise SystemExit('BUFFER_API_KEY missing; cannot inspect actual delivery state')
+          posts={
+           '2026-11-03 1PM instagram':'6ae96ab5da2711fd26b02c05',
+           '2026-11-03 1PM tiktok':'6ae96ab8a5f6b0f7438aef4d',
+           '2026-11-03 1PM youtube':'6ae96abba5f6b0f7438af047',
+           '2026-11-03 7PM instagram (cancelled)':'6ae96b2594b13c6dd79780de',
+           '2026-11-03 7PM tiktok (cancelled)':'6ae96b2794b13c6dd7978189',
+           '2026-11-03 7PM youtube (cancelled)':'6ae96b2ada2711fd26b05b4a',
+          }
+          q='query ($input: PostInput!) { post(input:$input) { id status channelService channelId schedulingType notificationStatus dueAt sentAt externalLink error { message supportUrl } assets { mimeType } } }'
+          for label,pid in posts.items():
+              body=json.dumps({'query':q,'variables':{'input':{'id':pid}}}).encode()
+              req=urllib.request.Request('https://api.buffer.com',method='POST',data=body,headers={
+                   'Authorization':'Bearer '+key,'Content-Type':'application/json'})
+              try:
+                  with urllib.request.urlopen(req,timeout=40) as resp: out=json.load(resp)
+                  p=(out.get('data') or {}).get('post')
+                  if p:
+                      print(label+' '+json.dumps(p,sort_keys=True))
+                  else: print(label+' '+json.dumps({'errors':out.get('errors')},sort_keys=True)[:600])
+              except Exception as exc:
+                  print(label+' QUERY_ERROR '+str(exc)[:160])
+          PY
