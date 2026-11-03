@@ -2,23 +2,34 @@
   "approval_id": "bpimage20261102a",
   "attempts": {
     "instagram": {
-      "status": "buffer_scheduled",
+      "status": "buffer_publish_error",
       "id": "6ae96ab5da2711fd26b02c05",
       "buffer_status": "scheduled",
-      "due_at": "2026-11-03T19:00:00.000Z"
+      "due_at": "2026-11-03T19:00:00.000Z",
+      "published": false,
+      "error": "There is an issue with the media included. Please remove it and try to upload it again.",
+      "recovery": "Original 768x1376 photo rejected by Instagram; use 1080x1350 validated feed export after user approves corrected preview."
     },
     "tiktok": {
-      "status": "buffer_scheduled",
+      "status": "buffer_sent",
       "id": "6ae96ab8a5f6b0f7438aef4d",
       "buffer_status": "scheduled",
-      "due_at": "2026-11-03T19:00:00.000Z"
+      "due_at": "2026-11-03T19:00:00.000Z",
+      "published": true,
+      "external_link": "https://tiktok.com/@blackpeakventures/video/7704022396906294541",
+      "sent_at": "2026-11-03T19:04:05.487Z"
     },
     "youtube": {
-      "status": "buffer_scheduled",
+      "status": "buffer_sent",
       "id": "6ae96abba5f6b0f7438af047",
       "buffer_status": "scheduled",
-      "due_at": "2026-11-03T19:00:00.000Z"
+      "due_at": "2026-11-03T19:00:00.000Z",
+      "published": true,
+      "external_link": "https://www.youtube.com/shorts/n531NNG-n30",
+      "sent_at": "2026-11-03T19:02:03.840Z"
     }
   },
-  "scheduled_post_day": "2026-11-03"
+  "scheduled_post_day": "2026-11-03",
+  "verification_source": "Buffer read-only post API, 2026-11-03; GitHub Actions run 41718631713",
+  "reposting_policy": "No automatic retry of Instagram on this approval; other two were sent and must never be duplicated. Corrected Instagram media requires human image/copy approval and separately checked future schedule."
 }
