@@ -5,7 +5,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 SOURCE = Path(__file__).resolve().parents[1] / "scripts" / "publisher.py"
@@ -30,7 +30,8 @@ class ApprovalChecks(unittest.TestCase):
             caption_instagram="BLCKPEAK showerhead #shower",
             caption_tiktok="BLCKPEAK showerhead #shower",
             caption_youtube="BLCKPEAK showerhead #shorts",
-            youtube_title="BLCKPEAK Showerhead | #Shorts"
+            youtube_title="BLCKPEAK Showerhead | #Shorts",
+            scheduled_for=(datetime.now(timezone.utc)+timedelta(days=2)).isoformat()
         )
     def tearDown(self):
         publisher.ROOT = self.old_root
@@ -42,6 +43,23 @@ class ApprovalChecks(unittest.TestCase):
     def test_approved_A(self):
         self.put()
         self.assertEqual(publisher.approval()["chosen"],"A")
+    def test_schedule_required(self):
+        del self.sample["scheduled_for"]; self.put()
+        with self.assertRaisesRegex(ValueError,"scheduled_for"): publisher.approval()
+    def test_timezone_required(self):
+        self.sample["scheduled_for"]="2026-11-04T19:00:00"; self.put()
+        with self.assertRaisesRegex(ValueError,"timezone"): publisher.approval()
+    def test_past_schedule_never_posts_immediately(self):
+        self.sample["scheduled_for"]="2020-01-01T19:00:00-06:00"; self.put()
+        with self.assertRaisesRegex(ValueError,"past"): publisher.due_at_utc(publisher.approval())
+    def test_utc_conversion(self):
+        self.sample["scheduled_for"]="2026-12-01T19:00:00-06:00"
+        self.assertEqual(publisher.scheduled_at(self.sample).isoformat(),"2026-12-02T01:00:00+00:00")
+    def test_future_scheduling_only(self):
+        import inspect
+        code=inspect.getsource(publisher.publish)
+        self.assertIn('"customScheduled"',code)
+        self.assertNotIn('"shareNow"',code)
     def test_no_approval(self):
         self.sample["user_approved"]=False; self.put()
         with self.assertRaises(ValueError):publisher.approval()
@@ -55,17 +73,17 @@ class ApprovalChecks(unittest.TestCase):
         self.sample["approval_id"]="not-matching"; self.put()
         with self.assertRaises(ValueError):publisher.approval()
     def test_daily_limit_allows_two_creatives(self):
-        day=datetime.now(ZoneInfo("America/Chicago")).date().isoformat()
+        day=publisher.scheduled_at(self.sample).astimezone(ZoneInfo("America/Chicago")).date().isoformat()
         publisher.RECEIPTS.mkdir()
-        row={"approval_id":"FIRST","local_post_day":day,"attempts":{"instagram":{"status":"attempting"}}}
+        row={"approval_id":"FIRST","scheduled_post_day":day,"attempts":{"instagram":{"status":"attempting"}}}
         (publisher.RECEIPTS/"first.json").write_text(json.dumps(row))
         current=publisher.enforce_daily_post_cap(self.sample,{"approval_id":self.sample["approval_id"],"attempts":{}})
-        self.assertEqual(current["local_post_day"],day)
+        self.assertEqual(current["scheduled_post_day"],day)
     def test_daily_limit_blocks_third_creative(self):
-        day=datetime.now(ZoneInfo("America/Chicago")).date().isoformat()
+        day=publisher.scheduled_at(self.sample).astimezone(ZoneInfo("America/Chicago")).date().isoformat()
         publisher.RECEIPTS.mkdir()
         for idx in range(2):
-            row={"approval_id":"OLDER"+str(idx),"local_post_day":day,"attempts":{"youtube":{"status":"buffer_accepted"}}}
+            row={"approval_id":"OLDER"+str(idx),"scheduled_post_day":day,"attempts":{"youtube":{"status":"buffer_scheduled"}}}
             (publisher.RECEIPTS/("older"+str(idx)+".json")).write_text(json.dumps(row))
         with self.assertRaisesRegex(RuntimeError,"Two-post daily cap"):
             publisher.enforce_daily_post_cap(self.sample,{"approval_id":self.sample["approval_id"],"attempts":{}})

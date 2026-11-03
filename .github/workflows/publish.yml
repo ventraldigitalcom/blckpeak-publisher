@@ -87,7 +87,7 @@ jobs:
           PAGES_BASE_URL: ${{ steps.deploy.outputs.page_url }}
         run: python3 scripts/publisher.py verify
 
-      - name: Publish only if explicitly enabled and approved
+      - name: Schedule only if explicitly enabled and approved
         if: ${{ vars.PUBLISHING_ENABLED == 'true' && (github.event_name == 'push' || inputs.dry_run == false) }}
         env:
           APPROVAL_FILE: ${{ steps.approval.outputs.approval_file }}

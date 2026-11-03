@@ -2,7 +2,7 @@
 """BLCKPEAK approved-only organic publisher. No uploads on NONE or without GitHub opt-in."""
 import json, os, re, subprocess, sys, time, urllib.parse, urllib.request
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,6 +12,29 @@ BUFFER_ENDPOINT = "https://api.buffer.com"
 
 def execute(*args):
     subprocess.run(args, cwd=ROOT, check=True, timeout=300)
+
+def scheduled_at(obj):
+    """Read an exact, timezone-aware scheduled date. Never infer a time."""
+    raw=obj.get("scheduled_for")
+    if not isinstance(raw,str) or not raw.strip():
+        raise ValueError("Missing exact scheduled_for date and time")
+    try:
+        date=datetime.fromisoformat(raw.strip().replace("Z","+00:00"))
+    except ValueError as exc:
+        raise ValueError("scheduled_for must be ISO 8601") from exc
+    if date.tzinfo is None or date.utcoffset() is None:
+        raise ValueError("scheduled_for must have a timezone offset")
+    return date.astimezone(timezone.utc)
+
+def due_at_utc(obj):
+    """Buffer requires UTC. Never permit past dates or immediate publishing."""
+    date=scheduled_at(obj)
+    now=datetime.now(timezone.utc)
+    if date <= now + timedelta(minutes=15):
+        raise ValueError("Scheduled time is past or less than 15 minutes away; no immediate posting")
+    if date > now + timedelta(days=60):
+        raise ValueError("Scheduled time is too far ahead; use within 60 days")
+    return date.isoformat(timespec="milliseconds").replace("+00:00","Z")
 
 def approval():
     filename = os.getenv("APPROVAL_FILE", "")
@@ -32,6 +55,7 @@ def approval():
     url = urllib.parse.urlparse(obj["image_url"])
     if url.scheme != "https" or url.username or url.password or (url.hostname or "").lower() not in ("cdn.shopify.com","blckpeak.com","www.blckpeak.com"):
         raise ValueError("Refuse untrusted image host")
+    scheduled_at(obj)
     return obj
 
 def paths(obj):
@@ -117,9 +141,12 @@ def write_receipt(obj, state):
         execute("git","push")
 
 def enforce_daily_post_cap(obj, state):
-    """One A/B/C creative posted to three channels counts as ONE daily slot."""
-    today=datetime.now(ZoneInfo("America/Chicago")).date().isoformat()
-    if state.get("local_post_day"):
+    """Limit to two distinct approved creatives per SCHEDULED Chicago day."""
+    day=scheduled_at(obj).astimezone(ZoneInfo("America/Chicago")).date().isoformat()
+    already=state.get("scheduled_post_day")
+    if already:
+        if already!=day:
+            raise ValueError("Cannot reschedule a creative after a publishing attempt")
         return state
     previous=0
     if RECEIPTS.exists():
@@ -127,17 +154,18 @@ def enforce_daily_post_cap(obj, state):
             if other.stem==obj["approval_id"]: continue
             try:
                 row=json.loads(other.read_text())
-                if row.get("local_post_day")==today and row.get("attempts"):
+                if row.get("attempts") and (row.get("scheduled_post_day") or row.get("local_post_day"))==day:
                     previous+=1
             except (ValueError, OSError): continue
     if previous>=2:
-        raise RuntimeError("Two-post daily cap reached for "+today+" (America/Chicago). Approval remains pending; do not post until next day.")
-    state["local_post_day"]=today
+        raise RuntimeError("Two-post daily cap reached for scheduled date "+day+" (America/Chicago). Approval remains pending.")
+    state["scheduled_post_day"]=day
     return state
 
 def publish(obj):
     if os.getenv("PUBLISHING_ENABLED")!="true":
         raise ValueError("Owner has not enabled organic publishing")
+    due=due_at_utc(obj)  # Preflight before any external write
     key=os.getenv("BUFFER_API_KEY")
     if not key: raise ValueError("Missing encrypted Buffer API secret")
     ids=channels(key)
@@ -146,7 +174,7 @@ def publish(obj):
     file=RECEIPTS/(obj["approval_id"]+".json")
     state=json.loads(file.read_text()) if file.exists() else {"approval_id":obj["approval_id"],"attempts":{}}
     state=enforce_daily_post_cap(obj,state)
-    mutation="mutation($input: CreatePostInput!) { createPost(input: $input) { ... on PostActionSuccess { post { id status } } ... on InvalidInputError { message } } }"
+    mutation="mutation($input: CreatePostInput!) { createPost(input: $input) { ... on PostActionSuccess { post { id status dueAt } } ... on MutationError { message } } }"
     for service in ("instagram","tiktok","youtube"):
         if service in state["attempts"]:
             print("Skipping previously attempted",service); continue
@@ -163,20 +191,27 @@ def publish(obj):
             assets=[{"video":{"url":mp4,"metadata":{"title":obj["youtube_title"]}}}]
             meta={"youtube":{"categoryId":"26","title":obj["youtube_title"],"madeForKids":False,"isAiGenerated":True}}
         inp={"channelId":ids[service],"text":obj["caption_"+service],
-             "assets":assets,"metadata":meta,"mode":"shareNow",
+             "assets":assets,"metadata":meta,"mode":"customScheduled","dueAt":due,
              "schedulingType":"automatic","needsApproval":False,
              "saveToDraft":False,"aiAssisted":True}
         try:
             response=gql(key,mutation,{"input":inp}).get("createPost") or {}
             post=response.get("post") or {}
-            if not post.get("id"): raise RuntimeError("Buffer did not accept post: "+str(response)[:400])
-            state["attempts"][service]={"status":"buffer_accepted","id":post["id"],"buffer_status":post.get("status")}
+            if not post.get("id"):
+                raise RuntimeError("Buffer did not accept scheduled post: "+str(response)[:400])
+            returned=post.get("dueAt")
+            if not returned or abs((datetime.fromisoformat(returned.replace("Z","+00:00"))-scheduled_at(obj)).total_seconds())>5:
+                raise RuntimeError("Buffer returned missing or incorrect scheduled time; check the post ID before retrying")
+            status=str(post.get("status") or "").lower()
+            if status in ("sent","published"):
+                raise RuntimeError("Buffer reported immediate publishing rather than scheduling")
+            state["attempts"][service]={"status":"buffer_scheduled","id":post["id"],"buffer_status":post.get("status"),"due_at":returned}
         except Exception as err:
             state["attempts"][service]={"status":"uncertain","error":str(err)[:500]}
         write_receipt(obj,state)
     print(json.dumps(state,indent=2))
-    if any((state["attempts"].get(s) or {}).get("status")!="buffer_accepted" for s in ("instagram","tiktok","youtube")):
-        raise RuntimeError("Some channels require review in Buffer Sent; DO NOT retry automatically")
+    if any((state["attempts"].get(s) or {}).get("status")!="buffer_scheduled" for s in ("instagram","tiktok","youtube")):
+        raise RuntimeError("Some channels require review in Buffer Calendar; DO NOT retry automatically")
 
 if __name__=="__main__":
     item=approval()
