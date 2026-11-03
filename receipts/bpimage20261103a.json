@@ -6,6 +6,9 @@
       "id": "6ae96b2594b13c6dd79780de",
       "buffer_status": "scheduled",
       "due_at": "2026-11-04T01:00:00.000Z"
+    },
+    "tiktok": {
+      "status": "attempting"
     }
   },
   "scheduled_post_day": "2026-11-03"
