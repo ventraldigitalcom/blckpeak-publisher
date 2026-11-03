@@ -98,6 +98,16 @@ class ApprovalChecks(unittest.TestCase):
             if previous is None: os.environ.pop("PUBLISHING_ENABLED",None)
             else: os.environ["PUBLISHING_ENABLED"]=previous
 
+    def test_github_actions_direct_cli_imports_work(self):
+        # The Actions workflow runs "python3 scripts/publisher.py prepare", not -m.
+        import subprocess, sys
+        proc=subprocess.run([sys.executable,str(SOURCE),"prepare"],
+             cwd=SOURCE.parents[1],capture_output=True,text=True,timeout=20,
+             env={**os.environ,"APPROVAL_FILE":""})
+        self.assertNotEqual(proc.returncode,0)
+        self.assertIn("Missing canonical explicit approval filename",proc.stderr)
+        self.assertNotIn("ModuleNotFoundError",proc.stderr)
+
     def test_no_publishing_flag(self):
         flag=os.environ.pop("PUBLISHING_ENABLED",None)
         self.put()
