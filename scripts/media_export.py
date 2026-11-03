@@ -32,10 +32,33 @@ def portrait_crop(width, height):
     return cw, ch, (width - cw) // 2, (height - ch) // 2
 
 
+
+def bottom_black_band_pixels(path, width, height):
+    """Count contiguous nearly-black full-width bottom rows in source artwork."""
+    decoded=subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
+        "-i",str(path),"-frames:v","1","-pix_fmt","rgb24","-f","rawvideo","-"],
+        capture_output=True,check=True,timeout=40).stdout
+    if len(decoded)!=width*height*3:
+        raise ValueError("Image decode size mismatch during black-bar audit")
+    xs=[int((i+0.5)*width/32) for i in range(32)]
+    rows=0
+    for y in range(height-1,-1,-1):
+        dark=0
+        for x in xs:
+            offset=(y*width+x)*3
+            if max(decoded[offset:offset+3])<=18: dark+=1
+        if dark<31: break
+        rows+=1
+    return rows
+
+
 def export_media(source, mp4, instagram_jpg, tiktok_jpg):
     """Create 8s silent YouTube mp4, 4:5 Instagram JPG and true 9:16 TikTok JPG."""
     width, height = probe_dimensions(source)
     cw, ch, left, top = portrait_crop(width, height)
+    black_rows=bottom_black_band_pixels(source,width,height)
+    if black_rows>max(16,int(height*.015)):
+        raise ValueError(f"Source has full-width black bottom band ({black_rows}px); manual QC required")
     crop = f"crop={cw}:{ch}:{left}:{top}"
     fit = f"{crop},scale=1080:1920:flags=lanczos,setsar=1"
     for path in (mp4, instagram_jpg, tiktok_jpg):
