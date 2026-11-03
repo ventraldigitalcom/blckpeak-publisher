@@ -164,6 +164,8 @@ def enforce_daily_post_cap(obj, state):
 def publish(obj):
     if os.getenv("PUBLISHING_ENABLED")!="true":
         raise ValueError("Owner has not enabled organic publishing")
+    if obj.get("audio_policy") != "silent_explicitly_approved":
+        raise ValueError("Silent automatic post not explicitly accepted; native TikTok/Instagram music requires manual platform finishing, or separately licensed approved audio")
     due=due_at_utc(obj)  # Preflight before any external write
     key=os.getenv("BUFFER_API_KEY")
     if not key: raise ValueError("Missing encrypted Buffer API secret")
