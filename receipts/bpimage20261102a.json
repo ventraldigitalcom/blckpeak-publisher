@@ -14,7 +14,10 @@
       "due_at": "2026-11-03T19:00:00.000Z"
     },
     "youtube": {
-      "status": "attempting"
+      "status": "buffer_scheduled",
+      "id": "6ae96abba5f6b0f7438af047",
+      "buffer_status": "scheduled",
+      "due_at": "2026-11-03T19:00:00.000Z"
     }
   },
   "scheduled_post_day": "2026-11-03"
