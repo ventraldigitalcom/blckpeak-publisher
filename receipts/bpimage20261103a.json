@@ -2,23 +2,28 @@
   "approval_id": "bpimage20261103a",
   "attempts": {
     "instagram": {
-      "status": "buffer_scheduled",
+      "status": "buffer_cancelled",
       "id": "6ae96b2594b13c6dd79780de",
       "buffer_status": "scheduled",
-      "due_at": "2026-11-04T01:00:00.000Z"
+      "due_at": "2026-11-04T01:00:00.000Z",
+      "cancelled_at": "2026-11-03T20:33:56Z"
     },
     "tiktok": {
-      "status": "buffer_scheduled",
+      "status": "buffer_cancelled",
       "id": "6ae96b2794b13c6dd7978189",
       "buffer_status": "scheduled",
-      "due_at": "2026-11-04T01:00:00.000Z"
+      "due_at": "2026-11-04T01:00:00.000Z",
+      "cancelled_at": "2026-11-03T20:33:56Z"
     },
     "youtube": {
-      "status": "buffer_scheduled",
+      "status": "buffer_cancelled",
       "id": "6ae96b2ada2711fd26b05b4a",
       "buffer_status": "scheduled",
-      "due_at": "2026-11-04T01:00:00.000Z"
+      "due_at": "2026-11-04T01:00:00.000Z",
+      "cancelled_at": "2026-11-03T20:33:56Z"
     }
   },
-  "scheduled_post_day": "2026-11-03"
+  "scheduled_post_day": "2026-11-03",
+  "cancellation_run": "https://github.com/ventraldigitalcom/blckpeak-publisher/actions/runs/41713725728",
+  "note": "Approved asset remains recorded; no new posting without owner reapproval after QC."
 }
