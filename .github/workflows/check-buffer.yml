@@ -1,3 +1,4 @@
+# Read-only recheck after owner enables publishing, 2026-11-02 evening.
 name: Verify Buffer connection (read-only)
 on:
   push:
