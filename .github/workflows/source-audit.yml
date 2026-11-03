@@ -1,0 +1,48 @@
+name: Read-only audit of original posted BLCKPEAK sources
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/source-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-format-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg
+        run: |
+          if ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y ffmpeg
+          fi
+      - name: Audit source dimensions without Buffer or publishing
+        run: |
+          python3 - <<'PY'
+          import json, urllib.request
+          from pathlib import Path
+          from scripts.media_export import probe_dimensions, portrait_crop, export_media
+          names=["bpimage20261102a", "bpimage20261103a"]
+          for name in names:
+              manifest=json.loads((Path("approvals")/(name+".json")).read_text())
+              req=urllib.request.Request(manifest["image_url"], headers={"User-Agent":"BLCKPEAK-format-audit"})
+              try:
+                  with urllib.request.urlopen(req,timeout=35) as f: data=f.read(15_000_001)
+                  if not data or len(data)>15_000_000: raise RuntimeError("invalid source file size")
+                  source=Path("/tmp")/(name+"_original")
+                  source.write_bytes(data)
+                  w,h=probe_dimensions(source)
+                  print(name+" ORIGINAL "+str(w)+"x"+str(h)+" aspect="+str(round(w/h,5)))
+                  try:
+                      cw,ch,l,t=portrait_crop(w,h)
+                      print(name+" 9:16 SAFE crop="+str((cw,ch,l,t)))
+                      outputs=[Path("/tmp")/(name+e) for e in (".mp4","_ig.jpg","_tt.jpg")]
+                      report=export_media(source,*outputs)
+                      print(name+" EXPORT VERIFIED "+str(report))
+                  except ValueError as e:
+                      print(name+" FORMAT REJECTED; DO NOT AUTO-PUBLISH: "+str(e))
+              except Exception as e:
+                  print(name+" SOURCE AUDIT UNAVAILABLE "+str(e))
+          PY
