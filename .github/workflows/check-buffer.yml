@@ -18,3 +18,13 @@ jobs:
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
         run: python3 scripts/check_buffer.py
+      - name: Report publish opt-in (no posts created)
+        if: always()
+        env:
+          PUBLISHING_ENABLED: ${{ vars.PUBLISHING_ENABLED }}
+        run: |
+          if [ "$PUBLISHING_ENABLED" = "true" ]; then
+            echo "PASS: PUBLISHING_ENABLED is true"
+          else
+            echo "BLOCKED: PUBLISHING_ENABLED is not true"
+          fi
