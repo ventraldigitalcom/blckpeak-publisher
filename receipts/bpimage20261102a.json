@@ -15,21 +15,24 @@
       "id": "6ae96ab8a5f6b0f7438aef4d",
       "buffer_status": "scheduled",
       "due_at": "2026-11-03T19:00:00.000Z",
-      "published": true,
       "external_link": "https://tiktok.com/@blackpeakventures/video/7704022396906294541",
-      "sent_at": "2026-11-03T19:04:05.487Z"
+      "sent_at": "2026-11-03T19:04:05.487Z",
+      "buffer_reports_sent": true,
+      "platform_page_independently_verified": false
     },
     "youtube": {
       "status": "buffer_sent",
       "id": "6ae96abba5f6b0f7438af047",
       "buffer_status": "scheduled",
       "due_at": "2026-11-03T19:00:00.000Z",
-      "published": true,
       "external_link": "https://www.youtube.com/shorts/n531NNG-n30",
-      "sent_at": "2026-11-03T19:02:03.840Z"
+      "sent_at": "2026-11-03T19:02:03.840Z",
+      "buffer_reports_sent": true,
+      "platform_page_independently_verified": false
     }
   },
   "scheduled_post_day": "2026-11-03",
   "verification_source": "Buffer read-only post API, 2026-11-03; GitHub Actions run 41718631713",
-  "reposting_policy": "No automatic retry of Instagram on this approval; other two were sent and must never be duplicated. Corrected Instagram media requires human image/copy approval and separately checked future schedule."
+  "reposting_policy": "No automatic retry of Instagram on this approval; other two were sent and must never be duplicated. Corrected Instagram media requires human image/copy approval and separately checked future schedule.",
+  "note": "Buffer status sent with external URLs for TikTok and YouTube; Instagram error confirmed. Platform page accessibility/visibility not independently verified in this run."
 }
