@@ -1,0 +1,77 @@
+name: Host exact approved Instagram recovery image
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/host-exact-instagram-recovery.yml']
+permissions:
+  contents: write
+  actions: read
+  pages: write
+  id-token: write
+concurrency:
+  group: blckpeak-pages-deploy
+  cancel-in-progress: false
+jobs:
+  host-only:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Recover exact previously approved local export from earlier verified cloud test
+        uses: actions/download-artifact@v4
+        with:
+          name: BLCKPEAK-real-source-media-preflight
+          run-id: 41718995767
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: /tmp/blckpeak_recovery
+      - name: Verify byte-identical file and commit permanent media
+        run: |
+          python3 - <<'PY'
+          import pathlib, hashlib, shutil
+          folder=pathlib.Path('/tmp/blckpeak_recovery')
+          matches=list(folder.rglob('bpimage20261102a_instagram.jpg'))
+          if len(matches)!=1: raise SystemExit(f"Expected 1 approved Instagram file, found {len(matches)}")
+          content=matches[0].read_bytes()
+          sha=hashlib.sha256(content).hexdigest()
+          if sha!='545fc350b4aca26477d41033826c61107d794314c987da22eeb5fd8d76487cb0':
+              raise SystemExit('Approved source SHA mismatch; no hosting')
+          target=pathlib.Path('docs/assets/bpimage20261102a_instagram_recovery_approved.jpg')
+          target.parent.mkdir(parents=True,exist_ok=True)
+          target.write_bytes(content)
+          print("APPROVED EXACT BYTES",len(content),"sha256",sha,"path",target)
+          PY
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.name 'github-actions[bot]'
+          git add docs/assets/bpimage20261102a_instagram_recovery_approved.jpg
+          if ! git diff --cached --quiet; then
+            git commit -m 'Host byte-identical approved Instagram image for safe recovery'
+            git push
+          fi
+      - name: Upload GitHub Pages site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - name: Deploy GitHub Pages (no social posting)
+        uses: actions/deploy-pages@v4
+        id: deploy
+      - name: Confirm exact public approved image
+        env:
+          PAGES_BASE: ${{ steps.deploy.outputs.page_url }}
+        run: |
+          python3 - <<'PY'
+          import urllib.request,hashlib,os
+          url=os.getenv('PAGES_BASE','').rstrip('/')+'/assets/bpimage20261102a_instagram_recovery_approved.jpg'
+          req=urllib.request.Request(url,headers={'User-Agent':'BLCKPEAK-approved-media-QC'})
+          with urllib.request.urlopen(req,timeout=30) as f:
+              content=f.read(1000000)
+              print("STATUS",f.status,"CONTENT_TYPE",f.headers.get("content-type"))
+          expected='545fc350b4aca26477d41033826c61107d794314c987da22eeb5fd8d76487cb0'
+          actual=hashlib.sha256(content).hexdigest()
+          print("URL",url,"SHA256",actual)
+          if actual!=expected:raise SystemExit('Public approved file mismatch; block scheduling')
+          print("PASS: exact approved image hosted with unchanged bytes")
+          PY
