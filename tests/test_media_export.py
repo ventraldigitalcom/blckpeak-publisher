@@ -32,7 +32,7 @@ class FormatTests(unittest.TestCase):
             # Solid colored source must remain colored at bottom-left corner;
             # black pad regression would make this pixel dark.
             proc=subprocess.run(["ffmpeg","-hide_banner","-loglevel","error",
-                "-i",str(mp4),"-vf","crop=1:1:0:1919,format=rgb24",
+                "-i",str(mp4),"-vf","crop=2:2:0:1918,format=rgb24",
                 "-frames:v","1","-f","rawvideo","-"],capture_output=True,check=True,timeout=30)
             rgb=proc.stdout[:3]
             self.assertEqual(len(rgb),3)
