@@ -1,0 +1,52 @@
+name: Emergency cancel scheduled BLCKPEAK posts
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/emergency-cancel.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cancel-only-known-posts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel three pre-existing 2026-11-03 7PM Chicago posts
+        env:
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, sys
+          key=os.getenv("BUFFER_API_KEY")
+          if not key:
+              raise SystemExit("BLOCKED: BUFFER_API_KEY not available; cancel in Buffer Calendar manually")
+          target_posts = {
+              "instagram":"6ae96b2594b13c6dd79780de",
+              "tiktok":"6ae96b2794b13c6dd7978189",
+              "youtube":"6ae96b2ada2711fd26b05b4a",
+          }
+          mutation="""mutation($input:DeletePostInput!) {
+            deletePost(input:$input) {
+              ... on DeletePostSuccess { id }
+              ... on VoidMutationError { message }
+            }
+          }"""
+          errors=[]
+          for platform, postid in target_posts.items():
+              data=json.dumps({"query":mutation,"variables":{"input":{"id":postid}}}).encode("utf-8")
+              req=urllib.request.Request("https://api.buffer.com",method="POST",data=data,headers={
+                "Authorization":"Bearer "+key,"Content-Type":"application/json"})
+              try:
+                  with urllib.request.urlopen(req,timeout=40) as response:
+                      obj=json.load(response)
+                  result=(obj.get("data") or {}).get("deletePost") or {}
+                  if result.get("id")==postid:
+                      print(platform+": CANCELLED "+postid)
+                  else:
+                      print(platform+": NOT CONFIRMED "+postid+" "+str(obj.get("errors") or result)[:300])
+                      errors.append(platform)
+              except Exception as e:
+                  print(platform+": CANCELLATION ERROR "+postid+" "+str(e)[:200])
+                  errors.append(platform)
+          if errors: sys.exit("CANCELLATION UNCONFIRMED FOR "+", ".join(errors))
+          PY
