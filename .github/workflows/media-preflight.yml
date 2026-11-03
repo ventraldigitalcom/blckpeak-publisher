@@ -1,0 +1,36 @@
+name: BLCKPEAK media-only publisher preflight
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/media-preflight.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-source-no-posting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make FFmpeg available
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y ffmpeg
+          fi
+      - name: Real approved photo through production CLI (never connects to Buffer)
+        env:
+          APPROVAL_FILE: approvals/bpimage20261102a.json
+        run: |
+          python3 scripts/publisher.py prepare
+          ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -of csv=p=0 docs/assets/bpimage20261102a.mp4
+          ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 docs/assets/bpimage20261102a_instagram.jpg
+          ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 docs/assets/bpimage20261102a_tiktok.jpg
+      - name: Store media for human preview (not public, no social posting)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BLCKPEAK-real-source-media-preflight
+          path: |
+            docs/assets/bpimage20261102a.mp4
+            docs/assets/bpimage20261102a_instagram.jpg
+            docs/assets/bpimage20261102a_tiktok.jpg
+          retention-days: 3
