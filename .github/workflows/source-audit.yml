@@ -23,7 +23,7 @@ jobs:
           python3 - <<'PY'
           import json, urllib.request
           from pathlib import Path
-          from scripts.media_export import probe_dimensions, portrait_crop, export_media
+          from scripts.media_export import probe_dimensions, portrait_crop, export_media, bottom_black_band_pixels
           names=["bpimage20261102a", "bpimage20261103a"]
           for name in names:
               manifest=json.loads((Path("approvals")/(name+".json")).read_text())
@@ -35,6 +35,7 @@ jobs:
                   source.write_bytes(data)
                   w,h=probe_dimensions(source)
                   print(name+" ORIGINAL "+str(w)+"x"+str(h)+" aspect="+str(round(w/h,5)))
+                  print(name+" SOURCE BOTTOM BLACK ROWS="+str(bottom_black_band_pixels(source,w,h)))
                   try:
                       cw,ch,l,t=portrait_crop(w,h)
                       print(name+" 9:16 SAFE crop="+str((cw,ch,l,t)))
