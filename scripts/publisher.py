@@ -4,6 +4,7 @@ import json, os, re, subprocess, sys, time, urllib.parse, urllib.request
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
+from scripts.media_export import export_media, probe_dimensions
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
@@ -62,14 +63,13 @@ def paths(obj):
     folder = DOCS / "assets"
     folder.mkdir(parents=True, exist_ok=True)
     ident = obj["approval_id"]
-    return folder / (ident + ".mp4"), folder / (ident + "_instagram.jpg")
+    return (folder / (ident + ".mp4"), folder / (ident + "_instagram.jpg"),
+            folder / (ident + "_tiktok.jpg"))
 
 def prepare(obj):
-    mp4, jpg = paths(obj)
-    if mp4.is_file() and jpg.is_file():
-        print("Existing media retained"); return
+    mp4, jpg, tiktok = paths(obj)
     request=urllib.request.Request(obj["image_url"],headers={"User-Agent":"BLCKPEAK-publisher"})
-    with urllib.request.urlopen(request, timeout=40) as response:
+    with urllib.request.urlopen(request,timeout=40) as response:
         if not response.headers.get("content-type","").lower().startswith("image/"):
             raise ValueError("Approval URL does not return an image")
         content=response.read(15000001)
@@ -77,34 +77,33 @@ def prepare(obj):
         raise ValueError("Approved photo too large/empty")
     target=Path("/tmp/blckpeak_approved_photo")
     target.write_bytes(content)
-    if not mp4.is_file():
-        execute("ffmpeg","-hide_banner","-loglevel","error","-y",
-                "-loop","1","-framerate","30","-i",str(target),"-t","8",
-                "-vf","scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
-                "-r","30","-c:v","libx264","-preset","veryfast","-crf","22","-movflags","+faststart",str(mp4))
-    if not jpg.is_file():
-        filt="[0:v]split=2[bg][fg];[bg]scale=1080:1350:force_original_aspect_ratio=increase,crop=1080:1350,boxblur=20:1[blur];[fg]scale=1080:1350:force_original_aspect_ratio=decrease[sharp];[blur][sharp]overlay=(W-w)/2:(H-h)/2,format=yuvj420p"
-        execute("ffmpeg","-hide_banner","-loglevel","error","-y","-i",str(target),"-filter_complex",filt,"-frames:v","1","-q:v","2",str(jpg))
-    print("Converted approved media", mp4.stat().st_size, jpg.stat().st_size)
+    # Always re-create: earlier releases used black-padded media.
+    report=export_media(target,mp4,jpg,tiktok)
+    print("Validated source-preserving portrait media:",report)
+    print("WARNING: format QC does not establish physical SKU fidelity")
 
 def urls(obj):
     base=os.getenv("PAGES_BASE_URL","").rstrip("/")
     if not base.startswith("https://"):
         raise ValueError("Missing GitHub Pages HTTPS deployment URL")
     prefix=base+"/assets/"+obj["approval_id"]
-    return prefix+".mp4",prefix+"_instagram.jpg"
+    return prefix+".mp4",prefix+"_instagram.jpg",prefix+"_tiktok.jpg"
 
 def verify(obj):
+    mp4,jpg,tiktok=paths(obj)
+    for file,expected in ((mp4,(1080,1920)),(jpg,(1080,1350)),(tiktok,(1080,1920))):
+        if not file.is_file() or probe_dimensions(file)!=expected:
+            raise RuntimeError("Local media failed dimensions QC: "+str(file))
     for url in urls(obj):
         for trial in range(16):
             try:
-                with urllib.request.urlopen(urllib.request.Request(url,method="HEAD"), timeout=12) as resp:
+                with urllib.request.urlopen(urllib.request.Request(url,method="HEAD"),timeout=12) as resp:
                     if resp.status==200: break
             except Exception: pass
             time.sleep(6)
         else:
             raise RuntimeError("Public approved media unavailable: "+url)
-    print("Public approved media URLs verified")
+    print("Public URLs and full-frame pixel dimensions verified")
 
 def gql(key, query, variables=None):
     body=json.dumps({"query":query,"variables":variables or {}}).encode()
@@ -169,7 +168,7 @@ def publish(obj):
     key=os.getenv("BUFFER_API_KEY")
     if not key: raise ValueError("Missing encrypted Buffer API secret")
     ids=channels(key)
-    mp4,instagram=urls(obj)
+    mp4,instagram,tiktok=urls(obj)
     verify(obj)
     file=RECEIPTS/(obj["approval_id"]+".json")
     state=json.loads(file.read_text()) if file.exists() else {"approval_id":obj["approval_id"],"attempts":{}}
@@ -182,10 +181,10 @@ def publish(obj):
         state["attempts"][service]={"status":"attempting"}
         write_receipt(obj,state)
         if service=="instagram":
-            assets=[{"image":{"url":obj["image_url"],"metadata":{"altText":"BLCKPEAK handheld showerhead"}}}]
+            assets=[{"image":{"url":instagram,"metadata":{"altText":"BLCKPEAK handheld showerhead"}}}]
             meta={"instagram":{"type":"post","shouldShareToFeed":True,"isAiGenerated":True}}
         elif service=="tiktok":
-            assets=[{"image":{"url":obj["image_url"],"metadata":{"altText":"BLCKPEAK handheld showerhead"}}}]
+            assets=[{"image":{"url":tiktok,"metadata":{"altText":"BLCKPEAK handheld showerhead"}}}]
             meta={"tiktok":{"title":obj["youtube_title"][:80]}}
         else:
             assets=[{"video":{"url":mp4,"metadata":{"title":obj["youtube_title"]}}}]
