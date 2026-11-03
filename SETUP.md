@@ -9,7 +9,8 @@
 - Cancelled exactly three Buffer posts scheduled for November 3 at 7 PM America/Chicago (one each Instagram, TikTok and YouTube); confirmation in GitHub Actions run 41713725728. This did not undo any already-published post.
 - Replaced the export with a centered exact 9:16 integer crop (up to 2.5% of source edges), Lanczos 1080×1920 render and **no black padding**. Sources significantly off 9:16 are rejected for manual review, not drastically cropped.
 - New TikTok media uses the finished 1080×1920 image; YouTube uses a true-frame eight-second MP4. Instagram uses a 4:5 image, preserving the full source within a blurred-source side fill. Output sizes are verified with ffprobe. Regression tests generate actual media and check a bottom corner for black letterboxing.
-- Important: these tests are synthetic; a new BLCKPEAK source-specific visual inspection and actual private/controlled platform test are still mandatory before reactivation.
+- Cloud source audit run [41715568282](https://github.com/ventraldigitalcom/blckpeak-publisher/actions/runs/41715568282) downloaded both actual Shopify originals: each **768×1376**, each **0 contiguous near-black bottom rows**, and each successfully exported to 1080×1920 TikTok/Shorts and 1080×1350 Instagram. Thus the original files do not contain a full-width black bottom border; the screenshot may reflect TikTok viewer framing or caption area. Platform-render validation is still necessary.
+- Important: an actual private/controlled platform test and full BLCKPEAK product visual inspection are still mandatory before reactivation.
 
 ## Music limitations
 - Buffer **cannot add TikTok's native/trending music automatically** through its publishing API; TikTok notification-publishing plus manual finalization in the app is required for native sounds.
