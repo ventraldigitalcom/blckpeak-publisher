@@ -12,6 +12,9 @@
       "id": "6ae96ab8a5f6b0f7438aef4d",
       "buffer_status": "scheduled",
       "due_at": "2026-11-03T19:00:00.000Z"
+    },
+    "youtube": {
+      "status": "attempting"
     }
   },
   "scheduled_post_day": "2026-11-03"
