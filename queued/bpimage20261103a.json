@@ -11,6 +11,7 @@
   "user_approved": true,
   "source": "User-supplied image explicitly offered for use on 2026-11-02; preserve exactly",
   "timezone": "America/Chicago",
-  "publishing_status": "queued_not_confirmed_social_schedule",
-  "posting_policy": "No paid ad spend. No edits or regeneration. Promote to live approval only after independent publisher verification and daily-cap check."
+  "publishing_status": "scheduled_then_cancelled_2026-11-03_pending_new_explicit_approval",
+  "posting_policy": "DO NOT resubmit automatically; owner approval of exact corrected media, copy and audio policy required after QC.",
+  "cancellation_verified": "https://github.com/ventraldigitalcom/blckpeak-publisher/actions/runs/41713725728"
 }
