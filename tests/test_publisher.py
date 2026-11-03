@@ -87,6 +87,17 @@ class ApprovalChecks(unittest.TestCase):
             (publisher.RECEIPTS/("older"+str(idx)+".json")).write_text(json.dumps(row))
         with self.assertRaisesRegex(RuntimeError,"Two-post daily cap"):
             publisher.enforce_daily_post_cap(self.sample,{"approval_id":self.sample["approval_id"],"attempts":{}})
+    def test_silent_post_requires_explicit_audio_approval(self):
+        self.put()
+        previous=os.environ.get("PUBLISHING_ENABLED")
+        os.environ["PUBLISHING_ENABLED"]="true"
+        try:
+            with self.assertRaisesRegex(ValueError,"Silent automatic post"):
+                publisher.publish(publisher.approval())
+        finally:
+            if previous is None: os.environ.pop("PUBLISHING_ENABLED",None)
+            else: os.environ["PUBLISHING_ENABLED"]=previous
+
     def test_no_publishing_flag(self):
         flag=os.environ.pop("PUBLISHING_ENABLED",None)
         self.put()
