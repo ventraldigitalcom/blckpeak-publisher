@@ -1,0 +1,59 @@
+name: Read-only Instagram recovery readiness
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/instagram-recovery-readiness.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read Buffer current channels, scheduled inventory and duplicates
+        env:
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          key=os.getenv('BUFFER_API_KEY')
+          if not key: raise SystemExit('BLOCKED: BUFFER_API_KEY missing')
+          def gql(q,v=None):
+              req=urllib.request.Request('https://api.buffer.com',data=json.dumps({'query':q,'variables':v or {}}).encode(),method='POST',headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'})
+              with urllib.request.urlopen(req,timeout=40) as resp: result=json.load(resp)
+              if result.get('errors'): raise RuntimeError(json.dumps(result['errors'])[:600])
+              return result['data']
+          organizations=(gql('query { account { organizations { id } } }')['account'] or {}).get('organizations') or []
+          if len(organizations)!=1: raise SystemExit('BLOCKED: expected one organization, got '+str(len(organizations)))
+          oid=organizations[0]['id']
+          channels=gql('query($id:OrganizationId!){channels(input:{organizationId:$id}){id name service isDisconnected isLocked isQueuePaused}}',{'id':oid})['channels']
+          targets={s:[c for c in channels if c['service']==s] for s in ('instagram','tiktok','youtube')}
+          for s,options in targets.items():
+              print('CHANNEL '+s+' '+json.dumps(options))
+              if len(options)!=1 or options[0]['isDisconnected'] or options[0]['isLocked']:
+                  raise SystemExit('BLOCKED: invalid connection for '+s)
+          ids=[targets[s][0]['id'] for s in ('instagram','tiktok','youtube')]
+          # Read all visible queued/sent/error posts. Paginate to avoid missing duplicates.
+          all_posts=[]; cursor=None
+          q='query($input:PostsInput!,$first:Int,$after:String){posts(input:$input,first:$first,after:$after){edges{node{id channelId text status dueAt createdAt sentAt}}pageInfo{endCursor hasNextPage}}}'
+          for n in range(20):
+              out=gql(q,{'input':{'organizationId':oid,'filter':{'channelIds':ids}},'first':50,'after':cursor})['posts']
+              all_posts.extend(e['node'] for e in out.get('edges') or [])
+              if not out['pageInfo']['hasNextPage']: break
+              cursor=out['pageInfo']['endCursor']
+          else: raise SystemExit('BLOCKED: post inventory incomplete (pagination limit)')
+          print('TOTAL_INVENTORY '+str(len(all_posts)))
+          for item in all_posts:
+              d=item.get('dueAt') or item.get('sentAt') or ''
+              t=item.get('text') or ''
+              date=(datetime.fromisoformat(d.replace('Z','+00:00')).astimezone(ZoneInfo('America/Chicago')).date().isoformat() if d else '')
+              if date in ('2026-11-03','2026-11-04','2026-11-05') or 'A shower moment, the BLCKPEAK way.' in t:
+                  service=next((s for s in targets if targets[s][0]['id']==item['channelId']),'?')
+                  print('POST '+json.dumps({'id':item['id'],'channel':service,'date':date,'status':item['status'],'dueAt':item.get('dueAt'),'text':t[:140]}))
+          ig=[p for p in all_posts if p['channelId']==targets['instagram'][0]['id']]
+          exact=[p for p in ig if (p.get('text') or '').startswith('A shower moment, the BLCKPEAK way.')]
+          print('INSTAGRAM_EXACT_CAPTION '+json.dumps([{'id':p['id'],'status':p['status'],'dueAt':p.get('dueAt')} for p in exact]))
+          PY
