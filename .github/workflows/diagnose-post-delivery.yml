@@ -41,4 +41,20 @@ jobs:
                   else: print(label+' '+json.dumps({'errors':out.get('errors')},sort_keys=True)[:600])
               except Exception as exc:
                   print(label+' QUERY_ERROR '+str(exc)[:160])
+          print('CONNECTED CHANNELS (read-only):')
+          q_org='query { account { organizations { id } } }'
+          req=urllib.request.Request('https://api.buffer.com',method='POST',
+              data=json.dumps({'query':q_org}).encode(),headers={
+                'Authorization':'Bearer '+key,'Content-Type':'application/json'})
+          with urllib.request.urlopen(req,timeout=30) as resp: orgs=json.load(resp)
+          for org in ((orgs.get('data') or {}).get('account') or {}).get('organizations') or []:
+              query='query($id:OrganizationId!){ channels(input:{organizationId:$id}){ id service name type externalLink isDisconnected isLocked isQueuePaused } }'
+              payload={'query':query,'variables':{'id':org['id']}}
+              req=urllib.request.Request('https://api.buffer.com',method='POST',
+                  data=json.dumps(payload).encode(),headers={
+                    'Authorization':'Bearer '+key,'Content-Type':'application/json'})
+              with urllib.request.urlopen(req,timeout=30) as resp: ch=json.load(resp)
+              for c in (ch.get('data') or {}).get('channels') or []:
+                  if c.get('service') in ('instagram','youtube','tiktok'):
+                      print(json.dumps(c,sort_keys=True))
           PY
