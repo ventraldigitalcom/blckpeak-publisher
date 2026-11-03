@@ -1,0 +1,48 @@
+name: Instagram approved image host preflight
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/instagram-host-preflight.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check-approved-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download published Shopify image and verify bytes, MIME and dimensions
+        env:
+          APPROVED_URL: 'https://cdn.shopify.com/s/files/1/0725/2184/2748/files/BLCKPEAK_approved_instagram_feed_2026-11-03_1080x1350_2e863082-30f8-4cc5-8e64-0dbf1666cce0.jpg?v=1793740899'
+          EXPECTED_SHA256: '545fc350b4aca26477d41033826c61107d794314c987da22eeb5fd8d76487cb0'
+        run: |
+          python3 - <<'PY'
+          import os,urllib.request,hashlib,struct
+          url=os.environ["APPROVED_URL"]
+          req=urllib.request.Request(url,headers={"User-Agent":"BLCKPEAK-IG-QC"})
+          with urllib.request.urlopen(req,timeout=45) as f:
+              typ=f.headers.get("Content-Type","")
+              data=f.read(16000000)
+              status=f.status
+          if status!=200 or not typ.lower().startswith("image/jpeg"):
+              raise SystemExit("BLOCKED: hosted file not reachable as image/jpeg: "+str(status)+" "+typ)
+          sha=hashlib.sha256(data).hexdigest()
+          # JPEG dimensions from its header segments; no extra dependencies.
+          if data[:2]!=b'\xff\xd8': raise SystemExit('BLOCKED: not JPEG magic')
+          i=2; dims=None
+          while i<len(data):
+              if data[i]!=0xff: i+=1;continue
+              while i<len(data) and data[i]==0xff:i+=1
+              marker=data[i];i+=1
+              if marker==0xda:break
+              length=int.from_bytes(data[i:i+2],'big')
+              if marker in (0xc0,0xc1,0xc2,0xc3,0xc5,0xc6,0xc7,0xc9,0xca,0xcb,0xcd,0xce,0xcf):
+                  h=int.from_bytes(data[i+3:i+5],"big");w=int.from_bytes(data[i+5:i+7],"big")
+                  dims=(w,h);break
+              i+=length
+          print("REMOTE_RESPONSE",status,typ,"bytes",len(data),"dimensions",dims,"sha256",sha)
+          if dims!=(1080,1350):raise SystemExit("BLOCKED: Instagram remote not 1080x1350")
+          if sha!=os.environ["EXPECTED_SHA256"]:
+              print("NOTE: CDN bytes differ from approved local SHA; require explicit visual review before use")
+              raise SystemExit("BLOCKED: remote image bytes mismatch approved image")
+          print("PASS: exact approved image bytes hosted publicly; no post made")
+          PY
