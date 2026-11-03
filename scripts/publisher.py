@@ -4,7 +4,13 @@ import json, os, re, subprocess, sys, time, urllib.parse, urllib.request
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
-from scripts.media_export import export_media, probe_dimensions
+# Works both as python3 scripts/publisher.py (GitHub Action) and via unittest.
+try:
+    from scripts.media_export import export_media, probe_dimensions
+except ModuleNotFoundError as exc:
+    if exc.name != "scripts":
+        raise
+    from media_export import export_media, probe_dimensions
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
