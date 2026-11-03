@@ -17,6 +17,19 @@ class FormatTests(unittest.TestCase):
             with self.subTest(dimensions=dimensions):
                 with self.assertRaisesRegex(ValueError,"9:16"):
                     portrait_crop(*dimensions)
+    def test_embedded_black_bottom_band_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder)
+            original=base/"blackband.png"
+            subprocess.run(["ffmpeg","-hide_banner","-loglevel","error","-y",
+                "-f","lavfi","-i","color=c=0x3399cc:s=768x1376:d=0.1",
+                "-vf","drawbox=x=0:y=1200:w=768:h=176:color=black:t=fill",
+                "-frames:v","1",str(original)],check=True,timeout=30)
+            from scripts.media_export import bottom_black_band_pixels
+            self.assertGreater(bottom_black_band_pixels(original,768,1376),100)
+            with self.assertRaisesRegex(ValueError,"black bottom band"):
+                export_media(original,base/"short.mp4",base/"ig.jpg",base/"tt.jpg")
+
     def test_real_ffmpeg_full_bleed_and_no_audio(self):
         with tempfile.TemporaryDirectory() as folder:
             base=Path(folder)
