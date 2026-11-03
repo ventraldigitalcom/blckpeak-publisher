@@ -43,6 +43,20 @@ class ApprovalChecks(unittest.TestCase):
     def test_approved_A(self):
         self.put()
         self.assertEqual(publisher.approval()["chosen"],"A")
+    def test_instagram_only_recovery_target(self):
+        self.sample["platforms"]=["instagram"]
+        self.put()
+        approved=publisher.approval()
+        self.assertEqual(approved["platforms"],["instagram"])
+
+    def test_duplicate_or_unapproved_platform_targets_rejected(self):
+        for targets in ([],["instagram","instagram"],["youtube","facebook"],"instagram"):
+            with self.subTest(platforms=targets):
+                self.sample["platforms"]=targets
+                self.put()
+                with self.assertRaisesRegex(ValueError,"platform"):
+                    publisher.approval()
+
     def test_schedule_required(self):
         del self.sample["scheduled_for"]; self.put()
         with self.assertRaisesRegex(ValueError,"scheduled_for"): publisher.approval()
