@@ -12,6 +12,16 @@
 - Cloud source audit run [41715568282](https://github.com/ventraldigitalcom/blckpeak-publisher/actions/runs/41715568282) downloaded both actual Shopify originals: each **768×1376**, each **0 contiguous near-black bottom rows**, and each successfully exported to 1080×1920 TikTok/Shorts and 1080×1350 Instagram. Thus the original files do not contain a full-width black bottom border; the screenshot may reflect TikTok viewer framing or caption area. Platform-render validation is still necessary.
 - Important: an actual private/controlled platform test and full BLCKPEAK product visual inspection are still mandatory before reactivation.
 
+## Verified three-platform delivery diagnosis (read-only Buffer, 2026-11-03)
+
+- For the approved 1 PM Chicago post `bpimage20261102a`, TikTok reports `sent` with [published TikTok link](https://tiktok.com/@blackpeakventures/video/7704022396906294541).
+- YouTube likewise reports `sent` to connected **BlackPeak Ventures** channel, with [this Shorts link](https://www.youtube.com/shorts/n531NNG-n30). Buffer reports successful handoff but we could not independently load the YouTube page in the diagnostic environment; user can check the linked channel.
+- Instagram returned `error`: **There is an issue with the media included. Please remove it and try to upload it again.** Its previous directly supplied original was 768x1376 (ratio .558), below Instagram automatic feed minimum of 4:5 (.8); this explains the likely media rejection. Instagram account `blackpeakventures` is a connected business profile, not locked or disconnected.
+- New production media conversion is now exercised with the *actual approved source* through `python3 scripts/publisher.py prepare` in the cloud without contacting Buffer. Verified 1080x1920 H.264 Short, 1080x1920 TikTok JPG and 1080x1350 Instagram JPG. [Dry-run proof](https://github.com/ventraldigitalcom/blckpeak-publisher/actions/runs/41718995767).
+- Publisher now optionally supports an explicitly approved `"platforms": ["instagram"]` manifest, so recovering one failed Instagram image will NOT duplicate the already published TikTok/YouTube posts.
+- Existing receipt `receipts/bpimage20261102a.json` now records actual individual delivery states, not merely scheduled acceptance. No automatic retry or re-publication of the corrected Instagram design has been authorized.
+- All new publishing remains disabled by the explicit workflow hold. The corrected Instagram asset and caption need human approval and a separately scheduled controlled test before changing that.
+
 ## Music limitations
 - Buffer **cannot add TikTok's native/trending music automatically** through its publishing API; TikTok notification-publishing plus manual finalization in the app is required for native sounds.
 - Instagram post/story music also requires native app finishing via notification publishing; some eligible connected Instagram Reel flows support music separately. Never assume an audio selection transfers cross-platform.
